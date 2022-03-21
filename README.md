@@ -23,7 +23,7 @@ import asyncio
 from osumodel import v1
 
 async def main():
-    u = await v1.User.get(u=840)
+    u = await v1.User.get(u="840") # 參數請看 osu-api wiki
     print(u)
 
 if __name__ == "__main__":
