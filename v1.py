@@ -1,8 +1,9 @@
+from ctypes import Union
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, Field, validator
 from httpx import AsyncClient, Response
-from enums import GameMode, Genre, Language, RankStatus
+from enums import GameMode, Genre, Language, Mod, RankStatus, ScoreMode, TeamMode
 from settings import settings
 
 
@@ -10,6 +11,7 @@ class APIModel(BaseModel):
     __baseurl__: str = "https://osu.ppy.sh/api"
     __uri__: str = ""
 
+    @classmethod
     async def get(cls, **params):
         async with AsyncClient() as client:
             respone: Response = await client.get(
@@ -17,13 +19,18 @@ class APIModel(BaseModel):
                 params=dict(**params, k=settings.api_key)
             )
             respone.raise_for_status()
-            result: List[dict] = respone.json()
-            data_length: int = len(result)
-            if data_length == 0:
-                return None
-            if data_length > 1:
-                return [cls(**r) for r in result]
-            return cls(**result[0])
+            result: Union[List[dict], dict] = respone.json()
+            if isinstance(result, list):
+                data_length: int = len(result)
+                if data_length == 0:
+                    return None
+                if data_length > 1:
+                    return [cls(**r) for r in result]
+                return cls(**result[0])
+            elif isinstance(result, dict):
+                return cls(**result)
+            else:
+                raise TypeError(f"can't support type {type(result)}")
 
 
 class Beatmap(APIModel):
@@ -121,33 +128,81 @@ class User(APIModel):
         return "https://a.ppy.sh/" + self.user_id
 
 
-class Score(APIModel):
+class ScoreBase(APIModel):
+    user_id: int
+    count100: int
+    count300: int
+    count50: int
+    countgeki: int
+    countkatu: int
+    countmiss: int
+    enabled_mods: Optional[Mod] = None
+    maxcombo: int
+    perfect: bool
+    rank: str
+    score: int
+
+class Score(ScoreBase):
     __uri__ = "/get_scores"
 
-    score_id: Optional[int] = None
-    score: int
+    score_id: int
     username: str
-    count300: int
-    count100: int
-    count50: int
-    countmiss: int
-    maxcombo: int
-    countkatu: int
-    countgeki: int
-    perfect: bool
-    enabled_mods: int
-    user_id: int
     date: datetime
-    rank: str
-    pp: Optional[float] = None
-    replay_available: Optional[bool] = False
+    pp: float
+    replay_available: bool
 
 
-class UserBest(Score):
+class UserBest(ScoreBase):
     __uri__ = "/get_user_best"
 
+    score_id: int
     beatmap_id: int
+    date: datetime
+    pp: float
+    replay_available: bool
 
 
-class UserRecent(UserBest):
+class UserRecent(ScoreBase):
     __uri__ = "/get_user_recent"
+
+    beatmap_id: int
+    date: datetime
+
+
+class GameScore(ScoreBase):
+    _pass: bool = Field(alias="pass")
+    slot: int
+    team: int
+
+
+class MatchHeader(BaseModel):
+    match_id: int
+    name: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+
+
+class MatchGame(BaseModel):
+    game_id: int
+    start_time: datetime
+    end_time: datetime
+    beatmap_id: int
+    play_mode: GameMode
+    match_type: int
+    scoring_type: ScoreMode
+    team_type: TeamMode
+    mods: int
+    scores: List[Score] = []
+
+
+class Multiplayer(APIModel):
+    __uri__ = "/get_match"
+
+    match: Optional[MatchHeader] = 0
+    games: List[MatchGame] = []
+
+
+class Replay(APIModel):
+    __uri__ = "/get_replay"
+
+    content: str
